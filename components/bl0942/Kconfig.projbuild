@@ -1,0 +1,39 @@
+menu "BL0942"
+
+config BL0942_ENABLE
+    bool "Enable BL0942 energy meter"
+    default y
+    help
+        Enable the BL0942 UART metering driver and HomeKit Eve Energy measurements.
+
+config BL0942_UART_BAUD
+    int "BL0942 UART baud rate"
+    default 4800
+    range 4800 38400
+    help
+        BL0942 UART baud rate. 4800 is the default when MODE[9:8]=00/01 and SCLK_BPS=0.
+
+config BL0942_UART_PORT
+    int "UART port number (0/1/2)"
+    default 0
+    range 0 2
+
+config BL0942_UART_USE_CUSTOM_PINS
+    bool "Use custom UART pins (otherwise use default RX/TX pins)"
+    default n
+
+config BL0942_UART_TX_GPIO
+    int "UART TX GPIO (only if custom pins enabled)"
+    default 21 if IDF_TARGET_ESP32
+    default 21 if IDF_TARGET_ESP32C3
+    range -1 39
+    depends on BL0942_UART_USE_CUSTOM_PINS
+
+config BL0942_UART_RX_GPIO
+    int "UART RX GPIO (only if custom pins enabled)"
+    default 20 if IDF_TARGET_ESP32
+    default 20 if IDF_TARGET_ESP32C3
+    range -1 39
+    depends on BL0942_UART_USE_CUSTOM_PINS
+
+endmenu

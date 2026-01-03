@@ -1,0 +1,69 @@
+menu "StudioPieters"
+
+      comment "For more information visit www.studiopieters.nl"
+
+      config ESP_RELAY_GPIO
+    int "Relay GPIO"
+    default 16 if IDF_TARGET_ESP32
+    default 4  if IDF_TARGET_ESP32C3
+    range 0 39
+    help
+        GPIO driving the relay transistor/driver.
+        For ESP32: must be output-capable (0..33). Do NOT use GPIO6..11 (flash).
+
+      config ESP_SWITCH_GPIO
+    int "Switch GPIO"
+    default 5  if IDF_TARGET_ESP32C3
+    default 5  if IDF_TARGET_ESP32
+    range 0 39
+    help
+        Optional external switch input GPIO (active-low with pull-up). When toggled, it will sync the relay state.
+
+
+
+
+
+      config ESP_BLUE_LED_GPIO
+    int "Blue LED GPIO"
+    default 2  if IDF_TARGET_ESP32
+    default 6  if IDF_TARGET_ESP32C3
+    range 0 39
+    help
+        GPIO driving blue LED.
+        Note: GPIO2 is a boot strap pin; OK on most devkits/onboard LEDs.
+
+
+
+      config ESP_BUTTON_GPIO
+    int "Button GPIO"
+    default 23 if IDF_TARGET_ESP32
+    default 7  if IDF_TARGET_ESP32C3
+    range 0 39
+    help
+        Button input GPIO (active-low if using button_active_low).
+        If using GPIO34..39 on ESP32: these pins are input-only and have NO internal pullups.
+
+
+      config ESP_BL0942_UPDATE_PERIOD_MS
+        int "BL0942 Update Period (ms)"
+        default 1000
+        range 250 60000
+        help
+            How often the BL0942 readings are sampled and pushed to HomeKit.
+            Lower values give smoother graphs but increase CPU usage and HomeKit traffic.
+
+
+
+      config ESP_SETUP_CODE
+              string "HomeKit Setup Code"
+              default "693-41-208"
+              help
+                  If you want to change the HomeKit Setup Code, you can do that here (Note:  you need to make a new QR-CODE To make it work)
+
+      config ESP_SETUP_ID
+              string "HomeKit Setup ID"
+              default "M4T8"
+              help
+                   If you want to change the HomeKit Setup ID, you can do that here (Note: you need to make a new QR-CODE To make it work)
+
+endmenu
