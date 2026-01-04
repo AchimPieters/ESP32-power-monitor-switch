@@ -483,7 +483,7 @@ homekit_characteristic_t relay_on_characteristic =
 homekit_accessory_t *accessories[] = {
         HOMEKIT_ACCESSORY(
                 .id = 1,
-                .category = homekit_accessory_category_Switches, // Smart plug / outlet
+                .category = homekit_accessory_category_switches, // Smart plug / outlet
                 .services = (homekit_service_t *[]) {
                 HOMEKIT_SERVICE(ACCESSORY_INFORMATION, .characteristics = (homekit_characteristic_t *[]) {
                         &name,

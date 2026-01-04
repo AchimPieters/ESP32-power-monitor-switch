@@ -8,7 +8,14 @@ CONFIG_COMPILER_OPTIMIZATION_SIZE=y
 
 # Binary Size Reduction
 CONFIG_LOG_DEFAULT_LEVEL_ERROR=y
-CONFIG_ESP_CONSOLE_UART_DEFAULT=n
+
+# IMPORTANT:
+# This project must run on both ESP32-WROOM-32D and ESP8685-WROOM-03 (ESP32-C3).
+# Both modules are commonly flashed/monitored via an external USB-UART adapter,
+# so keep the serial console enabled on UART0.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_UART_NUM=0
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
 
 # RAM Usage Minimization
 # CONFIG_FREERTOS_IDLE_TASK_STACKSIZE=512

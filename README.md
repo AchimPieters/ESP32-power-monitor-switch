@@ -157,12 +157,31 @@ The driver uses the **BL0942 packet reading mode** to fetch all parameters in on
 
 ## Build & Flash
 
+This project supports both:
+
+- **ESP32-WROOM-32D** (target `esp32`)
+- **ESP8685-WROOM-03** (ESP32-C3, target `esp32c3`)
+
+### ESP32-WROOM-32D
+
 ```bash
 idf.py set-target esp32
 idf.py menuconfig
 idf.py build
 idf.py flash monitor
 ```
+
+### ESP8685-WROOM-03 (ESP32-C3)
+
+```bash
+idf.py set-target esp32c3
+idf.py menuconfig
+idf.py build
+idf.py flash monitor
+```
+
+> Tip: this project keeps the **UART0 console enabled** by default (see `sdkconfig.defaults`),
+> which is required on typical ESP8685/ESP32-C3 modules that are monitored via an external USB-UART adapter.
 
 ---
 
