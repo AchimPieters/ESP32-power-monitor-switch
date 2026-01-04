@@ -209,4 +209,4 @@ idf.py flash monitor
 
 ## License
 
-MIT (or your chosen license)
+MIT

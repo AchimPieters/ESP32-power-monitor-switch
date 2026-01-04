@@ -9,9 +9,8 @@ config BL0942_ENABLE
 config ESP_BL0942_UART_PORT
     int "UART port (0/1/2)"
     depends on BL0942_ENABLE
-    default 0 if IDF_TARGET_ESP32C2
     default 2 if IDF_TARGET_ESP32
-    default 1 if IDF_TARGET_ESP32C3
+    default 0 if IDF_TARGET_ESP32C3
     range 0 2
     help
         UART port used to communicate with the BL0942.
@@ -19,9 +18,8 @@ config ESP_BL0942_UART_PORT
 config ESP_BL0942_UART_TX_GPIO
     int "BL0942 TX -> ESP RX GPIO (BL0942 TX/SDO pin)"
     depends on BL0942_ENABLE
-    default -1 if IDF_TARGET_ESP32C2
     default 17 if IDF_TARGET_ESP32
-    default 4 if IDF_TARGET_ESP32C3
+    default 20 if IDF_TARGET_ESP32C3
     range -1 39
     help
         GPIO used as UART RX on the ESP side (connected to BL0942 TX).
@@ -29,10 +27,8 @@ config ESP_BL0942_UART_TX_GPIO
 
 config ESP_BL0942_UART_RX_GPIO
     int "BL0942 RX -> ESP TX GPIO (BL0942 RX/SDI pin)"
-    depends on BL0942_ENABLE
-    default -1 if IDF_TARGET_ESP32C2
     default 16 if IDF_TARGET_ESP32
-    default 5 if IDF_TARGET_ESP32C3
+    default 21 if IDF_TARGET_ESP32C3
     range -1 39
     help
         GPIO used as UART TX on the ESP side (connected to BL0942 RX).

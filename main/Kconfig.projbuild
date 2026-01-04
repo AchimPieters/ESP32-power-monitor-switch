@@ -5,7 +5,6 @@ menu "StudioPieters"
     config ESP_SWITCH_GPIO
         int "Switch GPIO"
         default 5  if IDF_TARGET_ESP32
-        default 5  if IDF_TARGET_ESP32C2
         default 5  if IDF_TARGET_ESP32C3
         range 0 39
         help
@@ -14,8 +13,7 @@ menu "StudioPieters"
     config ESP_RELAY_GPIO
         int "Relay GPIO"
         default 16  if IDF_TARGET_ESP32
-        default 4  if IDF_TARGET_ESP32C2
-        default 6  if IDF_TARGET_ESP32C3
+        default 4  if IDF_TARGET_ESP32C3
         range 0 39
         help
             GPIO driving the relay transistor/driver.
@@ -24,7 +22,6 @@ menu "StudioPieters"
     config ESP_BUTTON_GPIO
         int "Button GPIO"
         default 23 if IDF_TARGET_ESP32
-        default 7  if IDF_TARGET_ESP32C2
         default 7  if IDF_TARGET_ESP32C3
         range 0 39
         help
@@ -34,8 +31,7 @@ menu "StudioPieters"
     config ESP_BLUE_LED_GPIO
         int "Blue LED GPIO"
         default 2  if IDF_TARGET_ESP32
-        default 6  if IDF_TARGET_ESP32C2
-        default 20 if IDF_TARGET_ESP32C3
+        default 6 if IDF_TARGET_ESP32C3
         range 0 39
         help
             GPIO driving blue LED.
