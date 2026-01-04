@@ -41,15 +41,15 @@
 #include "custom_charcteristc.h"
 #include <button.h>
 
-// Step 4: BL0942 component is present and wired to HomeKit.
+// Step 4: BL0942 component is present and wired to HomeKit (UART).
 // We initialize the driver and periodically push Voltage/Current/Power/Energy
 // values into custom characteristics under the existing Outlet service.
 #include "bl0942.h"
 
 // -------- GPIO configuration (set these in sdkconfig) --------
 #define BUTTON_GPIO      CONFIG_ESP_BUTTON_GPIO
+#define SWITCH_GPIO      CONFIG_ESP_SWITCH_GPIO
 #define RELAY_GPIO       CONFIG_ESP_RELAY_GPIO
-#define SWITCH_GPIO     CONFIG_ESP_SWITCH_GPIO
 #define BLUE_LED_GPIO    CONFIG_ESP_BLUE_LED_GPIO
 
 static const char *RELAY_TAG   = "RELAY";
@@ -66,7 +66,7 @@ static const char *CAL_NVS_KEY_VCAL     = "v_cal";
 static const char *CAL_NVS_KEY_ICAL     = "i_cal";
 static const char *CAL_NVS_KEY_PCAL     = "p_cal";
 
-// Relay state (used by both the HomeKit relay service and the BL0942 watchdog)
+// Relay state (used by the HomeKit relay service and energy-meter task)
 // NOTE: keep this definition above tasks that reference it.
 static bool relay_on = false;
 
@@ -184,19 +184,6 @@ extern homekit_characteristic_t energy_current;
 extern homekit_characteristic_t energy_power;
 extern homekit_characteristic_t energy_energy;
 
-// ---------- Status LED (BLUE) state machine ----------
-// The red LED is used as a lifecycle indicator:
-// - WiFi not ready / provisioning: solid ON
-// - Normal: OFF
-// - BL0942 error: 1 blink every 2 seconds
-typedef enum {
-        LED_MODE_WIFI_WAIT = 0,
-        LED_MODE_NORMAL_OFF,
-        LED_MODE_METER_ERROR,
-} led_mode_t;
-
-static volatile led_mode_t s_led_mode = LED_MODE_WIFI_WAIT;
-
 static void bl0942_homekit_task(void *arg)
 {
         (void)arg;
@@ -249,9 +236,6 @@ static void bl0942_homekit_task(void *arg)
         float last_v = NAN, last_c = NAN, last_p = NAN, last_e_kwh = NAN;
         int64_t last_v_notify_us = 0, last_c_notify_us = 0, last_p_notify_us = 0, last_e_notify_us = 0;
 
-        // Error detection for BL0942 signal integrity (drives BLUE LED blink)
-        int invalid_ticks = 0;
-        int valid_recover_ticks = 0;
 
         while (true) {
                 if (s_energy_reset_requested) {
@@ -278,46 +262,13 @@ static void bl0942_homekit_task(void *arg)
 
                 const bl0942_measurements_t m = bl0942_get();
 
-                // --- BL0942 validity watchdog (for stable Home/Eve behaviour) ---
-                // When the relay is OFF, it's normal for there to be no meaningful load.
-                // In that state we suppress the BL0942 "error blink" and reset the watchdog.
-                if (!relay_on) {
-                        invalid_ticks = 0;
-                        valid_recover_ticks = 0;
-                        if (s_led_mode == LED_MODE_METER_ERROR) {
-                                s_led_mode = LED_MODE_NORMAL_OFF;
-                        }
-                } else {
-                        const bool ok_now = (m.valid_voltage && m.valid_current && m.valid_power);
-                        if (!ok_now) {
-                                valid_recover_ticks = 0;
-                                invalid_ticks++;
-                        } else {
-                                invalid_ticks = 0;
-                                valid_recover_ticks++;
-                        }
-
-                        // After ~5 seconds of invalid data, indicate hardware/driver issue.
-                        if (invalid_ticks * BL0942_UPDATE_PERIOD_MS >= 5000) {
-                                /* disabled red error blink */
-                        }
-                        // If we recovered and are stable again for ~2 seconds, clear error.
-                        if (s_led_mode == LED_MODE_METER_ERROR && valid_recover_ticks * BL0942_UPDATE_PERIOD_MS >= 2000) {
-                                s_led_mode = LED_MODE_NORMAL_OFF;
-                        }
+                if (!m.valid && relay_on) {
+                        ESP_LOGW(BL0942_TAG, "BL0942 readings invalid (check UART wiring/SEL/SCLK_BPS/baud)");
                 }
 
-                // When not yet "valid" we still publish 0.0 (keeps Home app happy), but
-                // we log the raw Hz values so calibration/debugging stays possible.
-                if (!m.valid_voltage || !m.valid_current || !m.valid_power) {
-                        ESP_LOGD(BL0942_TAG, "raw: cf=%.2fHz cfu=%.2fHz cfi=%.2fHz (valid V/I/P=%d/%d/%d)",
-                                 (double)m.cf_hz, (double)m.cfu_hz, (double)m.cfi_hz,
-                                 m.valid_voltage, m.valid_current, m.valid_power);
-                }
-
-                float v = (m.valid_voltage ? m.voltage_v : 0.0f);
-                float c = (m.valid_current ? m.current_a : 0.0f);
-                float p = (m.valid_power   ? m.power_w   : 0.0f);
+                float v = (m.valid ? m.voltage_v : 0.0f);
+                float c = (m.valid ? m.current_a : 0.0f);
+                float p = (m.valid ? m.power_w   : 0.0f);
 
                 // Clamp and sanitize (Eve/Home dislikes NaN/inf/negative spikes)
                 if (!isfinite(v) || v < 0.0f) v = 0.0f;
@@ -384,112 +335,7 @@ static void bl0942_homekit_task(void *arg)
         }
 }
 
-// Relay / plug state (enige bron van waarheid)
-// (defined near the top of this file)
-
-// Forward declarations (used by status LED task)
-static inline void red_led_write(bool on);
-
-static void status_led_task(void *arg)
-{
-        (void)arg;
-
-        // 50ms tick gives us stable timing without blocking other tasks.
-        const TickType_t tick = pdMS_TO_TICKS(50);
-        uint32_t t_ms = 0;
-
-        while (true) {
-                led_mode_t mode = s_led_mode;
-
-                switch (mode) {
-                case LED_MODE_WIFI_WAIT: {
-                        // Slow blink while waiting for WiFi / HomeKit pairing readiness.
-                        const uint32_t phase = t_ms % 1000;
-                        const bool on = (phase < 100);
-                        gpio_set_level(BLUE_LED_GPIO, on ? 1 : 0);
-                        break;
-                }
-                case LED_MODE_NORMAL_OFF:
-                        // Normal mode: blue LED reflects relay state.
-                        blue_led_write(relay_on);
-                        break;
-                case LED_MODE_METER_ERROR: {
-                        // 2 quick blinks every 2 seconds.
-                        const uint32_t phase = t_ms % 2000;
-                        const bool on = (phase < 100) || (phase >= 300 && phase < 400);
-                        gpio_set_level(BLUE_LED_GPIO, on ? 1 : 0);
-                        break;
-                }
-                default:
-                        blue_led_write(relay_on);
-                        break;
-                }
-
-                t_ms += 50;
-                vTaskDelay(tick);
-        }
-}
-
- // ---------- Low-level GPIO helpers ----------
-
-
-// Centralized relay state update. If notify=true, HomeKit ON characteristic is notified.
-static void relay_set_state(bool on, bool notify)
-{
-        relay_on = on;
-        relay_write(on);
-
-        // Keep blue LED in sync in normal mode (status task may override in other modes)
-        if (s_led_mode == LED_MODE_NORMAL_OFF) {
-                blue_led_write(on);
-        }
-
-        relay_on_characteristic.value = HOMEKIT_BOOL(on);
-        if (notify) {
-                homekit_characteristic_notify(&relay_on_characteristic, relay_on_characteristic.value);
-        }
-}
-
-// Visual confirmation: blink BLUE LED 3x (non-blocking enough for occasional use)
-static void blink_blue_led_3x(void)
-{
-        for (int i = 0; i < 3; i++) {
-                gpio_set_level(BLUE_LED_GPIO, 1);
-                vTaskDelay(pdMS_TO_TICKS(120));
-                gpio_set_level(BLUE_LED_GPIO, 0);
-                vTaskDelay(pdMS_TO_TICKS(120));
-        }
-}
-
-// Optional external switch sync task (active-low with pull-up)
-static void switch_task(void *arg)
-{
-        (void)arg;
-
-        bool last = gpio_get_level(SWITCH_GPIO) ? true : false;
-        // Interpret: GPIO low => ON
-        bool last_on = !last;
-
-        while (true) {
-                bool raw = gpio_get_level(SWITCH_GPIO) ? true : false;
-                bool on = !raw;
-
-                if (on != last_on) {
-                        // Simple debounce: require stable for 30ms
-                        vTaskDelay(pdMS_TO_TICKS(30));
-                        raw = gpio_get_level(SWITCH_GPIO) ? true : false;
-                        on = !raw;
-
-                        if (on != last_on) {
-                                ESP_LOGI(RELAY_TAG, "Switch -> %s", on ? "ON" : "OFF");
-                                relay_set_state(on, true);
-                                last_on = on;
-                        }
-                }
-
-                vTaskDelay(pdMS_TO_TICKS(50));
-        }
-}
+// ---------- Low-level GPIO helpers ----------
 
 static inline void relay_write(bool on) {
         gpio_set_level(RELAY_GPIO, on ? 1 : 0);
@@ -500,6 +346,72 @@ static inline void blue_led_write(bool on) {
         gpio_set_level(BLUE_LED_GPIO, on ? 1 : 0);
 }
 
+// 3x korte blauwe LED blink (zonder de relay status te veranderen)
+static void blink_blue_led_3x(void) {
+        bool previous_led_state = relay_on;
+
+        for (int i = 0; i < 3; i++) {
+                blue_led_write(true);
+                vTaskDelay(pdMS_TO_TICKS(100));
+                blue_led_write(false);
+                vTaskDelay(pdMS_TO_TICKS(100));
+        }
+
+        // Restore normal behavior (LED follows relay state)
+        blue_led_write(previous_led_state);
+}
+
+// Forward declaration van de characteristic zodat we hem in functies kunnen gebruiken
+extern homekit_characteristic_t relay_on_characteristic;
+
+// Centrale functie: zet state, stuurt hardware aan en (optioneel) HomeKit-notify
+static void relay_set_state(bool on, bool notify_homekit) {
+        if (relay_on == on) {
+                // Geen verandering, niets te doen
+                return;
+        }
+
+        relay_on = on;
+
+        // Hardware aansturen
+        relay_write(relay_on);
+        blue_led_write(relay_on); // Blauwe LED volgt altijd de relay-status
+
+        ESP_LOGI(RELAY_TAG, "Relay state -> %s", relay_on ? "ON" : "OFF");
+
+        // HomeKit characteristic-snapshot updaten
+        relay_on_characteristic.value = HOMEKIT_BOOL(relay_on);
+
+        // Eventueel HomeKit-clients informeren
+        if (notify_homekit) {
+                homekit_characteristic_notify(&relay_on_characteristic,
+                                              relay_on_characteristic.value);
+        }
+}
+
+// All GPIO Settings
+void gpio_init(void) {
+        // Relay
+        gpio_reset_pin(RELAY_GPIO);
+        gpio_set_direction(RELAY_GPIO, GPIO_MODE_OUTPUT);
+
+        // Blauwe LED (aan/uit)
+        gpio_reset_pin(BLUE_LED_GPIO);
+        gpio_set_direction(BLUE_LED_GPIO, GPIO_MODE_OUTPUT);
+
+        // Switch input (optioneel)
+        gpio_reset_pin(SWITCH_GPIO);
+        gpio_set_direction(SWITCH_GPIO, GPIO_MODE_INPUT);
+        gpio_set_pull_mode(SWITCH_GPIO, GPIO_PULLUP_ONLY);
+
+        // Initial state: alles uit, in sync brengen
+        relay_on = false;
+        relay_on_characteristic.value = HOMEKIT_BOOL(false);
+        relay_write(false);
+        blue_led_write(false);
+
+        // Bij start is er nog geen WiFi -> status LED in WiFi-wachtstand
+}
 
 // ---------- Accessory identification (Blue LED) ----------
 
@@ -571,7 +483,7 @@ homekit_characteristic_t relay_on_characteristic =
 homekit_accessory_t *accessories[] = {
         HOMEKIT_ACCESSORY(
                 .id = 1,
-                .category = homekit_accessory_category_outlets, // Smart plug / outlet
+                .category = homekit_accessory_category_Switches, // Smart plug / outlet
                 .services = (homekit_service_t *[]) {
                 HOMEKIT_SERVICE(ACCESSORY_INFORMATION, .characteristics = (homekit_characteristic_t *[]) {
                         &name,
@@ -582,8 +494,8 @@ homekit_accessory_t *accessories[] = {
                         HOMEKIT_CHARACTERISTIC(IDENTIFY, accessory_identify),
                         NULL
                 }),
-                HOMEKIT_SERVICE(OUTLET, .primary = true, .characteristics = (homekit_characteristic_t *[]) {
-                        HOMEKIT_CHARACTERISTIC(NAME, "HomeKit Plug"),
+                HOMEKIT_SERVICE(SWITCH, .primary = true, .characteristics = (homekit_characteristic_t *[]) {
+                        HOMEKIT_CHARACTERISTIC(NAME, "HomeKit Switch"),
                         &relay_on_characteristic,
                         &ota_trigger,
                         &energy_voltage,
@@ -626,7 +538,7 @@ void button_callback(button_event_t event, void *context) {
 
                 // Reset BL0942's internal accumulator. The periodic measurement task
                 // will push the updated (0.0) energy value to HomeKit on the next tick.
-                (void)bl0942_reset_energy();
+                bl0942_reset_energy();
                 s_energy_reset_requested = true;
 
                 // Visual confirmation for the user (same idea as Identify)
@@ -647,11 +559,6 @@ void button_callback(button_event_t event, void *context) {
 void on_wifi_ready() {
         static bool homekit_started = false;
 
-        // WiFi is nu up -> status LED normaal UIT (tenzij BL0942 error mode hem overneemt)
-        if (s_led_mode == LED_MODE_WIFI_WAIT) {
-                s_led_mode = LED_MODE_NORMAL_OFF;
-        }
-
         if (homekit_started) {
                 ESP_LOGI("INFORMATION", "HomeKit server already running; skipping re-initialization");
                 return;
@@ -671,14 +578,8 @@ void app_main(void) {
 
         gpio_init();
 
-        // Start status LED task (handles BLUE LED patterns non-blocking)
-        xTaskCreate(status_led_task, "status_led", 2048, NULL, 1, NULL);
-
-        // Optional external switch sync task
-        xTaskCreate(switch_task, "switch", 2048, NULL, 1, NULL);
-
 #if CONFIG_BL0942_ENABLE
-        // Step 4: start the BL0942 measurement + HomeKit publisher task
+        // Start the BL0942 measurement + HomeKit publisher task
         xTaskCreate(bl0942_homekit_task, "bl0942_hk", 4096, NULL, 5, NULL);
 #else
         ESP_LOGI(BL0942_TAG, "BL0942 disabled in sdkconfig (CONFIG_BL0942_ENABLE=n)");
@@ -696,10 +597,8 @@ void app_main(void) {
         if (wifi_err == ESP_ERR_NVS_NOT_FOUND) {
                 ESP_LOGW("WIFI", "WiFi configuration not found; provisioning required");
                 // Geen geldige WiFi-config -> status LED WiFi-wachtstand
-                s_led_mode = LED_MODE_WIFI_WAIT;
         } else if (wifi_err != ESP_OK) {
                 ESP_LOGE("WIFI", "Failed to start WiFi: %s", esp_err_to_name(wifi_err));
                 // Fout bij starten WiFi -> status LED WiFi-wachtstand
-                s_led_mode = LED_MODE_WIFI_WAIT;
         }
 }

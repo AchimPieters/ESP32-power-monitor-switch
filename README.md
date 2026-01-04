@@ -1,143 +1,157 @@
-# ESP32 Power Plug with Energy Meter
+# ESP32 Power Monitor Switch (BL0942)
 
-HomeKit-compatible smart power plug firmware based on **ESP32** and **BL0942 energy metering IC**, with full **Eve Energy** support.
+This project implements a **smart power plug / switch** based on an **ESP32** and the **BL0942 calibration‑free energy metering IC**.
+It measures **voltage, current, active power, energy, and frequency**, controls a relay, and exposes the data to **HomeKit**.
 
-This project is designed for **ESP-IDF v5.4+** and focuses on **stable Home/Eve presentation**, **accurate energy accounting**, and **production-grade robustness**.
-
----
-
-## Supported Hardware
-
-- ESP32-WROOM-32D
-- ESP8685-WROOM-03
-- BL0942 energy metering chip
+The project is verified with **BL0942 (SSOP‑10)** using **UART packet mode**.
 
 ---
 
 ## Features
 
-- HomeKit **Switch / Outlet** service
-- Eve Energy **custom service** (Voltage, Current, Power, Total Energy)
-- Stable graphs in **Apple Home** and **Eve.app**
-- Energy consumption **persistent across reboots and power loss**
-- BL0942 **calibration via NVS**
-- Measurement **rounding & normalization** (Eve-proof)
-- **EMA smoothing** to remove jitter
-- Non-blocking **status LED** with error signaling
+- BL0942 energy metering (UART)
+- Voltage RMS, Current RMS, Active Power
+- Energy accumulation with **NVS persistence**
+- Line frequency reporting
+- Relay control (on/off)
+- Button handling (short / long / double press)
+- HomeKit integration (Eve‑style characteristics)
+- Smooth filtering and rate‑limited notifications
 
 ---
 
-## Architecture Overview
+## Hardware Overview
 
-- BL0942 sampled at ~200 ms
-- Measurements aggregated at 1 second
-- HomeKit notifications rate-limited and threshold-based
-- Energy calculated as a monotonic accumulator (kWh)
+### Main Components
 
----
-
-## Step 12 – Eve / Home polish (Completed)
-
-This step focuses on correct presentation, units, and update stability in Home.app and Eve.app.
-
-### Services & Characteristics
-
-- Eve Energy characteristics are implemented as **float values** (no string/float mismatch)
-- Consistent characteristic definitions prevent Eve graph glitches
-
-### Units & Rounding
-
-| Measurement | Unit | Resolution |
-|-----------|------|------------|
-| Voltage | V | 0.1 |
-| Current | A | 0.001 |
-| Power | W | 1 |
-| Energy | kWh | 0.001 |
-
-All values are rounded **before** being published to HomeKit.
-
-### Update & Notification Strategy
-
-- BL0942 sampling: ~200 ms
-- Aggregation: 1 s
-- HomeKit notify rate: max ~1× per 2 s
-- Notifications only sent when values change beyond defined thresholds
-
-Result: **smooth, stable graphs without spikes or dropped history**.
+- ESP32 (ESP‑IDF)
+- BL0942 (SSOP‑10)
+- Low‑ohmic shunt resistor (typically 1–2 mΩ)
+- Mains voltage divider
+- Relay + driver
+- Momentary push button
+- Isolated power supply
 
 ---
 
-## Step 13 – Validation & Robustness (Hardware validation required)
+## BL0942 Pinout (SSOP‑10)
 
-The firmware contains all required mechanisms for robust operation, but the following **hardware validation steps must be executed**.
+This project uses the BL0942 **exactly as described below**.
 
-### Required Tests
+### Power and Ground
 
-- USB flash
-- OTA flash (if enabled)
-- Software reboot (`esp_restart()`)
-- Power-cycle (plug off/on)
-- Load testing (e.g. 300–1000 W resistive load)
+- **Pin 1 – VDD**  
+  3.3 V supply. Decouple close to the pin.
 
-### Expected Behavior
-
-- Total energy (kWh) is **monotonic** and never decreases
-- No power or voltage spikes after reboot
-- Home and Eve continue logging without interruption
-
-### Status LED Behavior
-
-| LED Pattern | Meaning |
-|------------|---------|
-| Solid ON | WiFi provisioning / not ready |
-| OFF | Normal operation |
-| 1 blink / 2 s | BL0942 error or timeout |
-
-### Regression Checklist
-
-- Switching works without metering active
-- Metering works with zero load
-- No NaN / infinite / negative values
-- No heap growth over time
+- **Pin 5 – GND**  
+  Ground reference.
 
 ---
 
-## Step 14 – Calibration, Normalization & Smoothing (Completed)
+### Current Measurement Channel
 
-### Calibration
+- **Pin 2 – IP**  
+- **Pin 3 – IN**  
 
-BL0942 calibration factors are configurable via **NVS**.
+Differential current input across the shunt resistor.
 
-**Namespace:** `bl0942`
-
-- `v_cal` – Voltage multiplier
-- `i_cal` – Current multiplier
-- `p_cal` – Power multiplier
-
-Calibration values are clamped to safe ranges (0.5 – 2.0).
-
-### Normalization
-
-- Values are clamped and sanitized (no negative, NaN, or infinite values)
-- Rounding ensures Eve/Home receive clean numeric data
-
-### Smoothing
-
-Exponential Moving Average (EMA) is applied to:
-
-- Voltage
-- Current
-- Power
-
-Energy is **not smoothed** (it is integrated over time).
+- Max input: ±42 mV peak (30 mV RMS)
+- High input impedance (~370 kΩ)
 
 ---
 
-## Energy Persistence
+### Voltage Measurement Channel
 
-- Total energy is periodically stored in **NVS**
-- No double-counting across reboots
-- Energy continues seamlessly after flash or power loss
+- **Pin 4 – VP**  
+
+Voltage input from mains via resistor divider.
+
+- Max input: ±100 mV peak (70 mV RMS)
+- High input impedance (~370 kΩ)
+
+---
+
+### Digital Interface and Control
+
+- **Pin 6 – CF1**  
+  Configurable logic output (energy pulse, zero‑crossing, or over‑current).
+  *Not required for normal UART operation in this project.*
+
+- **Pin 7 – SEL**  
+  Interface select  
+  - GND → UART mode (used here)  
+  - VDD → SPI mode  
+
+- **Pin 8 – SCLK_BPS**  
+  UART baud‑rate configuration pin (UART mode).
+
+- **Pin 9 – RX / SDI**  
+  UART RX (BL0942 receives data from ESP32).  
+  **External pull‑up required.**
+
+- **Pin 10 – TX / SDO**  
+  UART TX (BL0942 sends data to ESP32).  
+  **External pull‑up required.**
+
+---
+
+## UART Wiring (ESP32 ↔ BL0942)
+
+| BL0942 Pin | Function | ESP32 GPIO |
+|-----------|---------|------------|
+| RX / SDI  | UART RX | ESP32 TX |
+| TX / SDO  | UART TX | ESP32 RX |
+| SEL       | Mode    | GND |
+| SCLK_BPS  | Baud    | GND or VDD |
+
+### ⚠ Menuconfig Naming Note
+
+In ESP‑IDF:
+- `UART TX GPIO` = **ESP32 TX → BL0942 RX**
+- `UART RX GPIO` = **ESP32 RX ← BL0942 TX**
+
+This is electrically correct but easy to misread.
+
+---
+
+## UART Configuration
+
+- Mode: UART (SEL = 0)
+- Baud rate: 4800 / 9600 / 19200 / 38400 bps
+- Packet mode enabled
+- 24‑bit register data
+- Checksum verified on every packet
+
+The driver uses the **BL0942 packet reading mode** to fetch all parameters in one transaction.
+
+---
+
+## Measurement Model
+
+### Read Values
+
+- Voltage RMS → `V_RMS`
+- Current RMS → `I_RMS`
+- Active Power → `WATT`
+- Energy → `CF_CNT`
+- Frequency → `FREQ`
+- Status → `STATUS`
+
+### Energy Persistence
+
+- Total energy is stored in **NVS (mWh)**
+- On boot:
+  - Load stored energy
+  - Continue accumulation from BL0942 counter
+- Prevents energy loss or double counting across resets
+
+---
+
+## Button Actions
+
+- **Short press**: Toggle relay
+- **Long press**: Factory reset (HomeKit + NVS)
+- **Double press**: Reset accumulated energy
 
 ---
 
@@ -145,33 +159,54 @@ Energy is **not smoothed** (it is integrated over time).
 
 ```bash
 idf.py set-target esp32
+idf.py menuconfig
 idf.py build
 idf.py flash monitor
 ```
 
-### ESP-IDF Version
+---
 
-```text
->= v5.4
-```
+## Menuconfig Options
+
+- BL0942 UART pins
+- Baud rate selection
+- Shunt value
+- Voltage divider ratio
+- HomeKit accessory configuration
+- Relay GPIO
+- Button GPIO
 
 ---
 
-## Project Status
+## Common Issues & Fixes
 
-- Step 12 (Eve/Home polish): ✅ Completed
-- Step 14 (Calibration & smoothing): ✅ Completed
-- Step 13 (Validation): 🟨 Hardware testing required
+### No data / checksum errors
+- Missing pull‑ups on RX/SDI or TX/SDO
+- SEL not tied to GND
+- Baud rate mismatch
 
-After successful validation, this firmware is **production-ready** for HomeKit + Eve Energy usage.
+### Power reads zero
+- Shunt value incorrect
+- Divider ratio wrong
+- Anti‑creep active at very low loads
+
+### RMS looks unstable
+- Small load (<10–20 mA)
+- Board‑level DC offset
+- Normal for shunt‑based systems
 
 ---
 
-## Possible Next Enhancements
+## Notes
 
-- CLI or HTTP interface for live calibration
-- Power factor (PF) reporting
-- Overcurrent protection / automatic cut-off
-- Eve history interval tuning
+- BL0942 defaults are assumed:
+  - CF_EN = enabled
+  - CF_CNT does **not** clear on read
+  - Absolute energy accumulation
+- Changing MODE bits externally may break energy math unless handled in firmware.
 
 ---
+
+## License
+
+MIT (or your chosen license)
