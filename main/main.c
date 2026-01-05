@@ -443,7 +443,7 @@ void accessory_identify(homekit_value_t _value) {
 
 // ---------- HomeKit characteristics ----------
 
-#define DEVICE_NAME          "HomeKit Plug"
+#define DEVICE_NAME          "HomeKit Switch"
 #define DEVICE_MANUFACTURER  "StudioPieters®"
 #define DEVICE_SERIAL        "NLCC7DFD193A"
 #define DEVICE_MODEL         "LS066NL/A"
