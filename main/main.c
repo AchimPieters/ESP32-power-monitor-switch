@@ -342,8 +342,9 @@ static inline void relay_write(bool on) {
 }
 
 static inline void blue_led_write(bool on) {
-        // Blauwe LED: uitsluitend als aan/uit-indicator voor de relay (active low/high afhankelijk van hardware)
-        gpio_set_level(BLUE_LED_GPIO, on ? 1 : 0);
+        // AUBESS power monitor switch: blue LED is active-low.
+        // We want LED ON when relay is ON.
+        gpio_set_level(BLUE_LED_GPIO, on ? 0 : 1);
 }
 
 // 3x korte blauwe LED blink (zonder de relay status te veranderen)
@@ -404,6 +405,11 @@ void gpio_init(void) {
         gpio_set_direction(SWITCH_GPIO, GPIO_MODE_INPUT);
         gpio_set_pull_mode(SWITCH_GPIO, GPIO_PULLUP_ONLY);
 
+        // Button input (active-low)
+        gpio_reset_pin(BUTTON_GPIO);
+        gpio_set_direction(BUTTON_GPIO, GPIO_MODE_INPUT);
+        gpio_set_pull_mode(BUTTON_GPIO, GPIO_PULLUP_ONLY);
+
         // Initial state: alles uit, in sync brengen
         relay_on = false;
         relay_on_characteristic.value = HOMEKIT_BOOL(false);
@@ -445,8 +451,8 @@ void accessory_identify(homekit_value_t _value) {
 
 #define DEVICE_NAME          "HomeKit Switch"
 #define DEVICE_MANUFACTURER  "StudioPieters®"
-#define DEVICE_SERIAL        "NLCC7DFD193A"
-#define DEVICE_MODEL         "LS066NL/A"
+#define DEVICE_SERIAL        "NLSP2AUB571A"
+#define DEVICE_MODEL         "SW702NL/A"
 #define FW_VERSION           "0.0.1"
 
 homekit_characteristic_t name = HOMEKIT_CHARACTERISTIC_(NAME, DEVICE_NAME);
@@ -554,6 +560,41 @@ void button_callback(button_event_t event, void *context) {
         }
 }
 
+// ---------- Wall switch handling (S1/S2) ----------
+// AUBESS: wall switch input is typically a dry contact to GND -> active-low.
+static void wall_switch_task(void *arg) {
+        (void)arg;
+
+        int last = gpio_get_level(SWITCH_GPIO);
+        int stable = last;
+        TickType_t last_change = xTaskGetTickCount();
+
+        while (1) {
+                int now = gpio_get_level(SWITCH_GPIO);
+
+                if (now != last) {
+                        last = now;
+                        last_change = xTaskGetTickCount();
+                }
+
+                // debounce ~50ms
+                if ((xTaskGetTickCount() - last_change) > pdMS_TO_TICKS(50)) {
+                        if (stable != last) {
+                                stable = last;
+                                // IMPORTANT:
+                                // Treat the wall switch as a *toggle* input.
+                                // Any physical change (edge) toggles the relay, regardless of
+                                // HomeKit state or the absolute switch position.
+                                bool new_state = !relay_on;
+                                ESP_LOGI("SWITCH", "Wall switch edge -> toggle relay to %s", new_state ? "ON" : "OFF");
+                                relay_set_state(new_state, true);
+                        }
+                }
+
+                vTaskDelay(pdMS_TO_TICKS(10));
+        }
+}
+
 // ---------- Wi-Fi / HomeKit startup ----------
 
 void on_wifi_ready() {
@@ -577,6 +618,9 @@ void app_main(void) {
         ESP_ERROR_CHECK(lifecycle_configure_homekit(&revision, &ota_trigger, "INFORMATION"));
 
         gpio_init();
+
+        // Start wall switch monitoring (debounced). This keeps physical switch in sync with HomeKit.
+        xTaskCreate(wall_switch_task, "wall_switch", 2048, NULL, 4, NULL);
 
 #if CONFIG_BL0942_ENABLE
         // Start the BL0942 measurement + HomeKit publisher task

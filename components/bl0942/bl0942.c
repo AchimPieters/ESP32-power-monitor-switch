@@ -20,7 +20,7 @@
 
    for more information visit https://www.studiopieters.nl
  **/
- 
+
 #include "bl0942.h"
 
 #include <string.h>
@@ -312,10 +312,17 @@ esp_err_t bl0942_init(const bl0942_config_t *cfg)
         ESP_RETURN_ON_ERROR(uart_driver_install(cfg->uart_port, 256, 0, 0, NULL, 0), TAG, "uart_driver_install");
 
         if (cfg->uart_tx_gpio >= 0 || cfg->uart_rx_gpio >= 0) {
-                // If either is set, set both (use UART_PIN_NO_CHANGE for -1)
-                const int tx = (cfg->uart_tx_gpio >= 0) ? cfg->uart_tx_gpio : UART_PIN_NO_CHANGE;
-                const int rx = (cfg->uart_rx_gpio >= 0) ? cfg->uart_rx_gpio : UART_PIN_NO_CHANGE;
-                ESP_RETURN_ON_ERROR(uart_set_pin(cfg->uart_port, tx, rx, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE), TAG, "uart_set_pin");
+                /*
+                 * Kconfig labels follow the BL0942 side:
+                 *  - CONFIG_ESP_BL0942_UART_TX_GPIO = "BL0942 TX -> ESP RX" (ESP RX pin)
+                 *  - CONFIG_ESP_BL0942_UART_RX_GPIO = "BL0942 RX -> ESP TX" (ESP TX pin)
+                 *
+                 * But uart_set_pin() expects (ESP_TX, ESP_RX).
+                 * So we must swap here.
+                 */
+                const int esp_tx = (cfg->uart_rx_gpio >= 0) ? cfg->uart_rx_gpio : UART_PIN_NO_CHANGE;
+                const int esp_rx = (cfg->uart_tx_gpio >= 0) ? cfg->uart_tx_gpio : UART_PIN_NO_CHANGE;
+                ESP_RETURN_ON_ERROR(uart_set_pin(cfg->uart_port, esp_tx, esp_rx, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE), TAG, "uart_set_pin");
         }
 
         memset(&s_meas, 0, sizeof(s_meas));

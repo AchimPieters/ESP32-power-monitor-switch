@@ -10,18 +10,18 @@ config ESP_BL0942_UART_PORT
     int "UART port (0/1/2)"
     depends on BL0942_ENABLE
     default 2 if IDF_TARGET_ESP32
+    # On ESP32-C3/ESP8685 UART0 is often used for console/logging.
+    # UART1 is the safest default for the BL0942.
     default 1 if IDF_TARGET_ESP32C3
     range 0 2
     help
         UART port used to communicate with the BL0942.
-        Tip (ESP32-C3/ESP8685): avoid UART0 because it is typically used for flashing/console on GPIO20/21.
-        Default is UART1 to keep logs and BL0942 traffic separated.
 
 config ESP_BL0942_UART_TX_GPIO
     int "BL0942 TX -> ESP RX GPIO (BL0942 TX/SDO pin)"
     depends on BL0942_ENABLE
     default 17 if IDF_TARGET_ESP32
-    default 3 if IDF_TARGET_ESP32C3
+    default 20 if IDF_TARGET_ESP32C3
     range -1 39
     help
         GPIO used as UART RX on the ESP side (connected to BL0942 TX).
@@ -30,11 +30,10 @@ config ESP_BL0942_UART_TX_GPIO
 config ESP_BL0942_UART_RX_GPIO
     int "BL0942 RX -> ESP TX GPIO (BL0942 RX/SDI pin)"
     default 16 if IDF_TARGET_ESP32
-    default 1 if IDF_TARGET_ESP32C3
+    default 21 if IDF_TARGET_ESP32C3
     range -1 39
     help
         GPIO used as UART TX on the ESP side (connected to BL0942 RX).
-        Tip (ESP32-C3/ESP8685): default is IO1 (ESP TX) to avoid sharing UART0 pins.
         Use -1 to keep the UART's default pins.
 
 config BL0942_UART_BAUD

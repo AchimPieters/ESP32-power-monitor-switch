@@ -49,47 +49,47 @@ extern "C" {
 #define BL0942_STATUS_CREEP_F             (1u << 1)
 
 typedef struct {
-    // UART wiring (ESP side):
-    uart_port_t uart_port;
-    int uart_tx_gpio; // ESP TX (to BL0942 RX/SDI). Use -1 to keep UART default.
-    int uart_rx_gpio; // ESP RX (to BL0942 TX/SDO). Use -1 to keep UART default.
-    int baudrate;
+        // UART wiring (ESP side):
+        uart_port_t uart_port;
+        int uart_tx_gpio; // ESP TX (to BL0942 RX/SDI). Use -1 to keep UART default.
+        int uart_rx_gpio; // ESP RX (to BL0942 TX/SDO). Use -1 to keep UART default.
+        int baudrate;
 
-    // BL0942 UART address (A2:A1) for TSSOP14 multi-drop. SSOP10 is always 0.
-    uint8_t address;
+        // BL0942 UART address (A2:A1) for TSSOP14 multi-drop. SSOP10 is always 0.
+        uint8_t address;
 
-    // Board parameters for physical units:
-    int shunt_uohm;     // shunt resistor in micro-ohms
-    float v_div_ratio;  // Vpin_rms / Vline_rms
-    float vref_v;       // on-chip reference voltage (typ. 1.218V)
+        // Board parameters for physical units:
+        int shunt_uohm; // shunt resistor in micro-ohms
+        float v_div_ratio; // Vpin_rms / Vline_rms
+        float vref_v;   // on-chip reference voltage (typ. 1.218V)
 
-    // Sampling:
-    int sample_period_ms;
+        // Sampling:
+        int sample_period_ms;
 
-    // Calibration multipliers (optional):
-    float voltage_calibration;
-    float current_calibration;
-    float power_calibration;
+        // Calibration multipliers (optional):
+        float voltage_calibration;
+        float current_calibration;
+        float power_calibration;
 } bl0942_config_t;
 
 typedef struct {
-    // Physical values:
-    float voltage_v;
-    float current_a;
-    float power_w;
-    float energy_wh;
+        // Physical values:
+        float voltage_v;
+        float current_a;
+        float power_w;
+        float energy_wh;
 
-    // Raw register values (for debugging/advanced use):
-    uint32_t i_rms_raw;
-    uint32_t v_rms_raw;
-    uint32_t i_fast_rms_raw;
-    int32_t  watt_raw;
-    uint32_t cf_cnt_raw;
-    uint16_t freq_raw;
-    uint32_t status_raw;
+        // Raw register values (for debugging/advanced use):
+        uint32_t i_rms_raw;
+        uint32_t v_rms_raw;
+        uint32_t i_fast_rms_raw;
+        int32_t watt_raw;
+        uint32_t cf_cnt_raw;
+        uint16_t freq_raw;
+        uint32_t status_raw;
 
-    // Flags:
-    bool valid;
+        // Flags:
+        bool valid;
 } bl0942_measurements_t;
 
 /**

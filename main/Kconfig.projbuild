@@ -12,18 +12,18 @@ menu "StudioPieters"
 
     config ESP_RELAY_GPIO
         int "Relay GPIO"
-        default 18  if IDF_TARGET_ESP32
+        default 16  if IDF_TARGET_ESP32
         default 4  if IDF_TARGET_ESP32C3
         range 0 39
         help
             GPIO driving the relay transistor/driver.
-            Note: default changed to GPIO18 to avoid conflicts with BL0942 UART defaults on ESP32.
             For ESP32: must be output-capable (0..33). Do NOT use GPIO6..11 (flash).
 
     config ESP_BUTTON_GPIO
         int "Button GPIO"
         default 23 if IDF_TARGET_ESP32
-        default 7  if IDF_TARGET_ESP32C3
+        # AUBESS ESP8684-WROOM-03 (ESP32-C3): button input on GPIO1
+        default 1  if IDF_TARGET_ESP32C3
         range 0 39
         help
             Button input GPIO (active-low if using button_active_low).

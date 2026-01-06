@@ -36,3 +36,16 @@ CONFIG_HOMEKIT_DEBUG=y
 #
 CONFIG_WOLFSSL_APPLE_HOMEKIT=y
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=10500
+
+#
+# BL0942 calibration (AUBESS power monitor switch)
+#
+# PCB-verified network:
+#   R_high = 1914 + 1914 = 1.91M + 1.91M = 3.82M
+#   R_low  = RA1 || RA2 = 1k || 1k = 500R
+#   => V_DIV_RATIO ~= R_low / (R_high + R_low) ~= 0.0001308
+CONFIG_BL0942_V_DIV_RATIO="0.0002627"
+
+# After setting the correct divider ratio, keep voltage calibration near 1.0.
+# (Fine-trim in menuconfig if desired.)
+CONFIG_BL0942_VOLTAGE_CAL="1.000"
